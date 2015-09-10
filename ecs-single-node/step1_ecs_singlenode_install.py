@@ -61,45 +61,32 @@ def update_selinux_os_configuration():
     subprocess.call(["setenforce", "0"])
 
 
-def docker_install_func():
+def docker_install_func(package_manager, options):
     """
+    Automatically removes existing docker package (will disable/remvove all existing containers)
     Downloads, Install and starts the service for the  Supported Docker Version  1.4.1
     """
     try:
-
-        docker_yum = "yum"
-        docker_yum_arg = "remove"
-        docker_name = "docker"
-        docker_package_auto = "-y"
-
         # Removes previous Docker installations
         logger.info("Removing Docker Packages.")
-        subprocess.call([docker_yum, docker_yum_arg, docker_name, docker_package_auto])
+        subprocess.call([package_manger, "remove", "docker", options])
 
         docker_package = "docker-1.4.1-2.el7.x86_64.rpm"
 
         # Downloads Docker package if not already existent
         if not docker_package in cmdline("ls"):
-            docker_wget = "wget"
             docker_url = "http://cbs.centos.org/kojifiles/packages/docker/1.4.1/2.el7/x86_64/{}".format(docker_package)
-
             # Gets the docker package
             logger.info("Downloading the Docker Package.")
-            subprocess.call([docker_wget, docker_url])
-
-        docker_yum_arg = "install"
+            subprocess.call(["wget", docker_url])
 
         # Installs the docker package
         logger.info("Installing the Docker Package.")
-        subprocess.call([docker_yum, docker_yum_arg, docker_package, docker_package_auto])
-
-        docker_service = "service"
-        docker_service_name = "docker"
-        docker_service_action = "start"
+        subprocess.call([package_manager, "install", docker_package, options])
 
         # Starts the Docker Service
         logger.info("Starting the Docker Service.")
-        subprocess.call([docker_service, docker_service_name, docker_service_action])
+        subprocess.call(["service", "docker", "start"])
 
     except Exception as ex:
         logger.exception(ex)
@@ -642,7 +629,7 @@ def main():
     package_install_func(packages_to_install, pm, pm_auto_install)
 
     update_selinux_os_configuration()
-    docker_install_func()
+    docker_install_func(pm, pm_auto_install)
     prep_file_func()
     docker_pull_func(docker_image_name)
     hosts_file_func(args.hostname)
