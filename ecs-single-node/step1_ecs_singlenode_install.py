@@ -42,14 +42,15 @@ def package_install_func(packages, package_manager, options):
     """
     Installs packages
     """
-    try:
-        logger.info("Performing installation of the following packages: {} .".format(packages))
-        subprocess.call([package_manager, "install", packages, options])
+    for package in packages:
+        try:
+            logger.info("Performing installation of the following package: {} .".format(package))
+            subprocess.call([package_manager, options, "install", package])
 
-    except Exception as ex:
-        logger.exception(ex)
-        logger.fatal("Aborting program! Please review log.")
-        sys.exit()
+        except Exception as ex:
+            logger.exception(ex)
+            logger.fatal("Aborting program! Please review log.")
+            sys.exit()
 
 
 def update_selinux_os_configuration():
@@ -69,12 +70,14 @@ def docker_install_func(package_manager, options):
     try:
         # Removes previous Docker installations
         logger.info("Removing Docker Packages.")
-        subprocess.call([package_manger, "remove", "docker", options])
+        subprocess.call([package_manager, options, "remove", "docker"])
 
         docker_package = "docker-1.4.1-2.el7.x86_64.rpm"
+        if package_manager == 'zypper':
+            docker_package = 'docker'
 
         # Downloads Docker package if not already existent
-        if not docker_package in cmdline("ls"):
+        elif not docker_package in cmdline("ls"):
             docker_url = "http://cbs.centos.org/kojifiles/packages/docker/1.4.1/2.el7/x86_64/{}".format(docker_package)
             # Gets the docker package
             logger.info("Downloading the Docker Package.")
@@ -82,7 +85,7 @@ def docker_install_func(package_manager, options):
 
         # Installs the docker package
         logger.info("Installing the Docker Package.")
-        subprocess.call([package_manager, "install", docker_package, options])
+        subprocess.call([package_manager, options, "install", docker_package])
 
         # Starts the Docker Service
         logger.info("Starting the Docker Service.")
@@ -582,7 +585,7 @@ def main():
     # for SuSE Linux distributions, default package manager is zypper
     if args.pm_zypper:
         pm = "zypper"
-        pm_auto_install = "-n"
+        pm_auto_install = "--non-interactive"
         
     # Check if only wants to run the Container Configuration section
     if args.container_config:
@@ -625,7 +628,7 @@ def main():
     # update OS to latest packages
     pm_update(pm, pm_auto_install)
     #Install Required packages
-    packages_to_install = "wget tar"
+    packages_to_install = ['wget', 'tar']
     package_install_func(packages_to_install, pm, pm_auto_install)
 
     update_selinux_os_configuration()
