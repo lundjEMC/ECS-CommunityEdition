@@ -1,12 +1,15 @@
 #!/usr/bin/env python
 # An installation program for ECS SW 2.0 Single Data node
 import argparse
-
+import string
 import subprocess
 import logging
 import logging.config
-import sys
-import os
+import time
+import sys,re
+import shutil
+import getopt
+import os,json
 
 import settings
 
@@ -80,21 +83,22 @@ def docker_install_func():
         logger.info("Removing Docker Packages.")
         subprocess.call([docker_yum, docker_yum_arg, docker_name, docker_package_auto])
 
-        docker_wget = "wget"
-        docker_url = "http://cbs.centos.org/kojifiles/packages/docker/1.4.1/2.el7/x86_64/docker-1.4.1-2.el7.x86_64.rpm"
-
-        # Gets the docker package
-        logger.info("Downloading the Docker Package.")
-        subprocess.call([docker_wget, docker_url])
-
-        docker_yum = "yum"
-        docker_yum_arg = "install"
         docker_package = "docker-1.4.1-2.el7.x86_64.rpm"
-        docker_package_auto_install = "-y"
+
+        # Downloads Docker package if not already existent
+        if not docker_package in cmdline("ls"):
+            docker_wget = "wget"
+            docker_url = "http://cbs.centos.org/kojifiles/packages/docker/1.4.1/2.el7/x86_64/{}".format(docker_package)
+
+            # Gets the docker package
+            logger.info("Downloading the Docker Package.")
+            subprocess.call([docker_wget, docker_url])
+
+        docker_yum_arg = "install"
 
         # Installs the docker package
         logger.info("Installing the Docker Package.")
-        subprocess.call([docker_yum, docker_yum_arg, docker_package, docker_package_auto_install])
+        subprocess.call([docker_yum, docker_yum_arg, docker_package, docker_package_auto])
 
         docker_service = "service"
         docker_service_name = "docker"
@@ -116,18 +120,15 @@ def prep_file_func():
     """
     try:
 
-        wget = "wget"
-        url = "https://emccodevmstore001.blob.core.windows.net/test/additional_prep.sh"
+        # wget = "wget"
+        # url = "https://emccodevmstore001.blob.core.windows.net/test/additional_prep.sh"
 
         # Gets the prep. file
-        logger.info("Downloading the additional_prep file.")
-        subprocess.call([wget, url])
+        # logger.info("Downloading the additional_prep file.")
+        # subprocess.call([wget, url])
 
-        chmod = "chmod"
-        chmod_arg = "777"
-        file_name = "additional_prep.sh"
         logger.info("Changing the additional_prep.sh file permissions.")
-        subprocess.call([chmod, chmod_arg, file_name])
+        subprocess.call(["chmod", "777", "additional_prep.sh"])
 
     except Exception as ex:
         logger.exception(ex)
@@ -172,7 +173,46 @@ def docker_pull_func(docker_image_name):
         sys.exit()
 
 
-def network_file_func():
+def hosts_file_func(hostname):
+    """
+    Updates the /etc/hosts file with the IP-Hostname of each one of the DataNodes in the cluster
+    :rtype : null
+    """
+
+    try:
+        logger.info("Updating the /etc/hostname file with the Parameter Hostname")
+        hostname_exists = cmdline("cat /etc/hostname | grep %s" % hostname)
+        if not hostname_exists:
+            print "(Adding) Hostname does not Exist: %s" % hostname
+            os.remove("/etc/hostname")
+            hostname_file=open("/etc/hostname", "wb")
+            hostname_file.write(str(hostname))
+            hostname_file.close()
+        else:
+            print "(Ignoring) Hostname Exists: %s" % hostname_exists
+
+        logger.info("Updating the /etc/hosts file with the Parameter Hostname")
+
+      # Get the IP address
+        ip_address = subprocess.check_output(['hostname', '-i']).rstrip('\r\n')
+        # Open a file hosts
+        hosts_file = open("/etc/hosts", "a")
+        # Check if the hosts file has the entries
+        hostname_exists = cmdline("cat /etc/hosts | grep %s" % hostname)
+        if not hostname_exists:
+            print "(Adding) Hostname does not Exist: %s    %s" % (ip_address, hostname)
+            hosts_file.write("%s    %s\n" % (ip_address, hostname))
+        else:
+            print "(Ignoring) Hostname Exists: %s" % hostname_exists
+        # Close file
+        hosts_file.close()
+
+    except Exception as ex:
+        logger.exception(ex)
+        logger.fatal("Aborting program! Please review log.")
+        sys.exit()
+
+def network_file_func(ethadapter):
     """
     Creates and configures the the network configuration file
     """
@@ -186,16 +226,16 @@ def network_file_func():
         hostname = subprocess.check_output(['hostname']).rstrip('\r\n')
 
         # Create the Network.json file
-        logger.info("Creating the Network.json file with Hostname: {} and IP: {}:".format(hostname, ip_address))
+        logger.info("Creating the Network.json file with Ethernet Adapter: {} Hostname: {} and IP: {}:".format(ethadapter, hostname, ip_address))
         logger.info(
-            "{\"private_interface_name\":\"eth0\",\"public_interface_name\":\"eth0\",\"hostname\":\"%s\",\"public_ip\":\"%s\"}" % (
-                hostname, ip_address))
+            "{\"private_interface_name\":\"%s\",\"public_interface_name\":\"%s\",\"hostname\":\"%s\",\"public_ip\":\"%s\"}" % (
+                ethadapter, ethadapter, hostname, ip_address))
 
         # Open a file
         network_file = open("network.json", "wb")
 
-        network_string = "{\"private_interface_name\":\"eth0\",\"public_interface_name\":\"eth0\",\"hostname\":\"%s\",\"public_ip\":\"%s\"}" % (
-            hostname, ip_address)
+        network_string = "{\"private_interface_name\":\"%s\",\"public_interface_name\":\"%s\",\"hostname\":\"%s\",\"public_ip\":\"%s\"}" % (
+            ethadapter, ethadapter, hostname, ip_address)
 
         network_file.write(network_string)
 
@@ -243,6 +283,10 @@ def prepare_data_disk_func(disks):
 
         for index, disk in enumerate(disks):
             disk_path = "/dev/{}".format(disk)
+
+            if "{}1".format(disk) in cmdline("fdisk -l"):
+                logger.fatal("Partitioned disk {} already mounted. Please unmount and re-initialize disk before retrying.".format(disk))
+                sys.exit()
 
             logger.info("Partitioning the disk '{}'".format(disk_path))
             ps = subprocess.Popen(["echo", "-e", "\"o\nn\np\n1\n\n\nw\""], stdout=subprocess.PIPE)
@@ -447,6 +491,28 @@ def modify_container_conf_func():
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
+def getAuthToken(ECSNode, User, Password):
+    """
+    Poll to see if Auth Service is active.
+    """
+    logger.info("Waiting on Authentication Service. This may take several minutes.")
+    for i in range (0,30):
+        time.sleep(30)
+        try:
+            curlCommand = "curl -i -k https://%s:4443/login -u %s:%s" % (ECSNode, User, Password)
+            print ("Executing getAuthToken: %s " % curlCommand)
+            res=subprocess.check_output(curlCommand, shell=True)
+            authTokenPattern = "X-SDS-AUTH-TOKEN:(.*)\r\n"
+            searchObject=re.search(authTokenPattern,res)
+            assert searchObject, "Get Auth Token failed"
+            print("Auth Token %s" % searchObject.group(1))
+            return searchObject.group(1)
+        except Exception as ex:
+            logger.info("Problem reaching authentication server. Retrying shortly.")
+            # logger.info("Attempting to authenticate for {} minutes.".format(i%2))
+
+    logger.fatal("Authentication service not yet started.")
+
 
 def docker_cleanup_old_images():
     """
@@ -475,10 +541,15 @@ def cleanup_installation():
     try:
 
         logger.info("CleanUp Installation. Un-mount Drive and Delete Directories and Files from the Host")
+        logger.info("Cleanup performing: Un-mount Drive from the Host :: umount /dev/sdc1 /ecs/uuid-1")
         os.system("umount /dev/sdc1 /ecs/uuid-1")
+        logger.info("Cleanup performing: rm -rf /ecs/uuid-1")
         os.system("rm -rf /ecs/uuid-1")
+        logger.info("Cleanup performing: rm -rf /data/*")
         os.system("rm -rf /data/*")
+        logger.info("Cleanup performing: rm -rf /var/log/vipr/emcvipr-object/*")
         os.system("rm -rf /var/log/vipr/emcvipr-object/*")
+
 
     except Exception as ex:
         logger.exception(ex)
@@ -486,6 +557,15 @@ def cleanup_installation():
         sys.exit()
 
 
+def get_first(iterable, default=None):
+    """
+    Returns the first item from a list
+    :rtype : object
+    """
+    if iterable:
+        for item in iterable:
+            return item
+    return default
 
 # Main Execution
 def main():
@@ -498,6 +578,11 @@ def main():
     parser = argparse.ArgumentParser(
         description='EMC\'s Elastic Cloud Storage 2.0 Software Single Node Docker container installation script. ')
     parser.add_argument('--disks', nargs='+', help='The disk(s) name(s) to be prepared. Example: sda sdb sdc',
+                        required=True)
+    parser.add_argument('--hostname', nargs='+',
+                        help='Host VM hostname. Example: ECSNode1.mydomain.com',
+                        required=True)
+    parser.add_argument('--ethadapter', nargs='+', help='The main Ethernet Adapter used by the Host VM to communicate with the internet. Example: eth0.',
                         required=True)
     parser.add_argument('--onlyContainerConfig', dest='container_config', action='store_true',
                         help='If present, it will only run the container configuration. Example: True/False',
@@ -528,6 +613,10 @@ def main():
             print "Disk '/dev/{}' does not exist".format(disk)
             sys.exit(4)
 
+    if string.lower(args.hostname[0])=="localhost":
+        logger.info("StartUp Check: Hostname can not be localhost")
+        print "StartUp Check: Hostname can not be localhost"
+        sys.exit(10)
     # disk_ready = cmdline("fdisk -l /dev/{} | grep \"Disk label type:\"".format(disk))
     #    if disk_ready:
     #        print "Please check that Disk: {} is not formatted (fdisk -l).".format(disk)
@@ -540,6 +629,9 @@ def main():
     logger.info("Starting Step 1: Configuration of Host Machine to run the ECS Docker Container.")
 
     docker_image_name = "emccorp/ecs-software"
+    ethernet_adapter_name = get_first(args.ethadapter)
+    ip_address = subprocess.check_output(['hostname', '-i']).rstrip('\r\n')
+
 
     yum_func()
     package_install_func()
@@ -547,7 +639,8 @@ def main():
     docker_install_func()
     prep_file_func()
     docker_pull_func(docker_image_name)
-    network_file_func()
+    hosts_file_func(args.hostname)
+    network_file_func(ethernet_adapter_name)
     seeds_file_func()
     prepare_data_disk_func(args.disks)
     run_additional_prep_file_func(args.disks)
@@ -555,6 +648,7 @@ def main():
     set_docker_configuration_func()
     execute_docker_func(docker_image_name)
     modify_container_conf_func()
+    getAuthToken(ip_address,"root","ChangeMe")
     logger.info(
         "Step 1 Completed.  Navigate to the administrator website that is available from any of the ECS data nodes. \
         The ECS administrative portal can be accessed from port 443. For example: https://ecs-node-external-ip-address. \

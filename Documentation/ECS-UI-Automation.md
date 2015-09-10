@@ -11,7 +11,7 @@ Run the script with below values 1 step at a time for –MethodName parameter . 
 - InsertVDC
 - CreateObjectVpool
 - CreateNamespace
-- **CreateUser**  - CreateUser method will return an exception that user already exists. Ignore the exception and proceed to create secret key for the user. Looks like the user is being created inspite of the exception.
+- **CreateUser**  - CreateUser method will return an exception that user already exists. Ignore the exception and proceed to create secret key for the user. Looks like the user is being created in spite of the exception.
 - CreateSecretKey 
  
 **Note:**  If -MethodName option is not provided all the Object Provisioning steps will be run in the same sequence as above automatically.  
@@ -35,7 +35,7 @@ These are example values for the parameters:
 	
 |Variable Name|Variable Description | Example Value|
 |-------------|---------------------|--------------|
-|ECSNodes | IP Addressess of the ECS Nodes (coma delimited list). | 10.0.1.10,10.0.1.11,10.0.1.12,10.0.1.13 |
+|ECSNodes | IP Addresses of the ECS Nodes (coma delimited list). | 10.0.1.10,10.0.1.11,10.0.1.12,10.0.1.13 |
 |NameSpace | The objects' Namespace | ns1 |
 	|ObjectVArray | The objects' Virtual Array | ova1 |
 |ObjectVPool | The objects' Virtual Pool | ov1 |
@@ -47,7 +47,7 @@ These are example values for the parameters:
 ### Step 1: Upload the License File
 sudo python step2_object_provisioning.py --ECSNodes=10.0.1.10,10.0.1.11,10.0.1.12,10.0.1.13  --Namespace=ns1 --ObjectVArray=ova1 --ObjectVPool=ovp1 --UserName=emccode --DataStoreName=ds1 --VDCName=vdc1 --MethodName=UploadLicense
 
-### Step 2: Create Ojbect Virtual Array
+### Step 2: Create Object Virtual Array
 sudo python step2_object_provisioning.py --ECSNodes=10.0.1.10,10.0.1.11,10.0.1.12,10.0.1.13  --Namespace=ns1 --ObjectVArray=ova1 --ObjectVPool=ovp1 --UserName=emccode --DataStoreName=ds1 --VDCName=vdc1 --MethodName=CreateObjectVarray
 
 ### Step 3: Create the Data Store

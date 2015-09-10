@@ -7,7 +7,7 @@ This is a list of troubleshooting tips and nuggets that will help with issues. I
  
 ### Provisioning of ECS 
 
-It takes roughly 30 mins to get the system provisioned for Step 2 (step2_object_provisioning.py).   ECS creates Storage Pools, Replication Groups with the attached disks. If Step 2 is successful, you should see something along these lines.   
+It takes roughly 30 minutes to get the system provisioned for Step 2 (step2_object_provisioning.py).   ECS creates Storage Pools, Replication Groups with the attached disks. If Step 2 is successful, you should see something along these lines.
 
 #### Adding a Secret Key for a user
 
@@ -28,8 +28,9 @@ Executing REST API command:
 If you want to see if system is making progress:
 
 1. Log into one of ECS data nodes. 
-2. Navigate to the **/var/log/vipr/emc-viprobject/** directory 
-3. View the **/var/log/vipr/emc-viprobject/ssm.log** (tail -f /var/log/vipr/emc-viprobject/ssm.log) 
+2. Navigate to the **/var/log/vipr/emcvipr-object/** directory 
+3. View the **/var/log/vipr/emc-viprobject/ssm.log** (tail -f /var/log/vipr/emcvipr-object/ssm.log
+) 
    
 
 **Note:** there are ~2k tables to be initialized for the provisioning to complete.  You can check the following command to see if the tables are close to that number and if all tables are ready.  Run this from the node.   
