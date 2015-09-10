@@ -18,14 +18,17 @@ logging.config.dictConfig(settings.ECS_SINGLENODE_LOGGING)
 logger = logging.getLogger("root")
 
 
-def yum_func():
+def pm_update(package_manager, options):
     """
-    Performs CentOS update
+    Performs "update" command via package manager.
+    Works for yum and zypper.
+    For future reference, if Ubuntu needs support this will require more changes
+    ,as the apt-get command is "upgrade"
     """
-    logger.info("Performing a yum update.")
+    logger.info("Performing a {} update.".format(package_manager))
 
     try:
-        subprocess.call(["yum", "update", "-y"])
+        subprocess.call([package_manager, "update", options])
 
     except Exception as ex:
         logger.exception(ex)
@@ -35,23 +38,13 @@ def yum_func():
         sys.exit()
 
 
-def package_install_func():
+def package_install_func(packages, package_manager, options):
     """
-    Installs required packages
+    Installs packages
     """
     try:
-
-        yum = "yum"
-        yum_arg = "install"
-        yum_package_wget = "wget"
-        yum_package_tar = "tar"
-        yum_auto_install = "-y"
-
-        logger.info("Performing installation of the following package: {} .".format(yum_package_wget))
-        subprocess.call([yum, yum_arg, yum_package_wget, yum_auto_install])
-
-        logger.info("Performing installation of the following package: {} .".format(yum_package_tar))
-        subprocess.call([yum, yum_arg, yum_package_tar, yum_auto_install])
+        logger.info("Performing installation of the following packages: {} .".format(packages))
+        subprocess.call([package_manager, "install", packages, options])
 
     except Exception as ex:
         logger.exception(ex)
@@ -590,10 +583,20 @@ def main():
     parser.add_argument('--cleanup', dest='cleanup', action='store_true',
                         help='If present, run the Docker container/images Clean up and the /data Folder. Example: True/False',
                         required=False)
+    parser.add_argument('--zypper', dest='pm_zypper', action='store_true',
+                        help='If present, run the package manager commands with zypper (for SuSE OS)', required=False)
     parser.set_defaults(container_config=False)
     parser.set_defaults(cleanup=False)
     args = parser.parse_args()
 
+    # default package manager is YUM for RHEL and other related Linux distributions
+    pm = "yum"
+    pm_auto_install = "-y"
+    # for SuSE Linux distributions, default package manager is zypper
+    if args.pm_zypper:
+        pm = "zypper"
+        pm_auto_install = "-n"
+        
     # Check if only wants to run the Container Configuration section
     if args.container_config:
         logger.info("Starting Step 1b: Only running the Container Configuration for Single Node.")
@@ -632,9 +635,12 @@ def main():
     ethernet_adapter_name = get_first(args.ethadapter)
     ip_address = subprocess.check_output(['hostname', '-i']).rstrip('\r\n')
 
+    # update OS to latest packages
+    pm_update(pm, pm_auto_install)
+    #Install Required packages
+    packages_to_install = "wget tar"
+    package_install_func(packages_to_install, pm, pm_auto_install)
 
-    yum_func()
-    package_install_func()
     update_selinux_os_configuration()
     docker_install_func()
     prep_file_func()
