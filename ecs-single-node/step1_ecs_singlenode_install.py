@@ -20,7 +20,7 @@ def get_partition_uuid(disk_partition):
     """
     use disk utils to obtain partition uuid
     """
-    return cmdline("wipefs -npq {} | cut -d "," -f 2 | sed -n 2p".format(disk_partition))
+    return cmdline("wipefs -npq {} | cut -d ',' -f 2 | sed -n 2p".format(disk_partition)).strip()
 
 def pm_update(package_manager, options):
     """
@@ -140,7 +140,7 @@ def docker_pull_func(docker_image_name):
     Getting the ECS Docker image from DockerHub. Using Docker Pull
     """
     try:
-        logger.info("Executing a Docker Pull for image {}".format(docker_file))
+        logger.info("Executing a Docker Pull for image {}".format(docker_image_name))
         subprocess.call(["docker", "pull", docker_image_name])
 
     except Exception as ex:
@@ -258,7 +258,7 @@ def prepare_data_disk_func(disks):
             disk_path = "/dev/{}".format(disk)
             partition_path = "/dev/{}1".format(disk)
 
-            if "xfs" == cmdline("wipefs -npq /dev/{} | cut -d "," -f 4 | sed -n 2p".format(partition_path)):
+            if string("xfs") == cmdline("wipefs -npq {} | cut -d ',' -f 4 | sed -n 2p".format(partition_path)).rstrip():
                 logger.info("Disk partition {} is already formateed xfs".format(partition_path))
             elif "{}1".format(disk) in cmdline("fdisk -l"):
                 logger.fatal("Partitioned disk {} already mounted. Please unmount and re-initialize disk before retrying.".format(disk))
@@ -370,7 +370,7 @@ def set_docker_configuration_func():
         # service docker restart
         logger.info("Restart Docker service.")
         subprocess.call(["service", "docker", "restart"])
-
+        time.sleep(10)
         # service docker status
         logger.info("Check Docker service status.")
         subprocess.call(["service", "docker", "status"])
@@ -619,7 +619,7 @@ def main():
     update_selinux_os_configuration()
     docker_install_func(pm, pm_auto_install)
     prep_file_func()
-    time.sleep(30)  # allow docker service to start
+    time.sleep(10)  # allow docker service to start
     docker_pull_func(docker_image_name)
     hosts_file_func(args.hostname)
     network_file_func(ethernet_adapter_name)
