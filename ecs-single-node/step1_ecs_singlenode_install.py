@@ -285,7 +285,7 @@ def prepare_data_disk_func(disks):
                 # os.system("echo -e o\nn\np\n1\n\n\nw | fdisk /dev/sdc")
 
                 # Make File Filesystem in attached Volume
-                logger.info("Make File filesystem in '{}'".format(device_name))
+                logger.info("Make File filesystem in '{}'".format(partition_name))
                 subprocess.call(["mkfs.xfs", "-f", partition_path])
 
             uuid_name = "uuid-{}".format(get_partition_uuid(partition_path))
@@ -311,10 +311,10 @@ def run_additional_prep_file_func(disks):
         prep_file_name = "./additional_prep.sh"
 
         for disk in disks:
-            device_name = "/dev/{}1".format(disk)
+            partition_name = "/dev/{}1".format(disk)
             # Gets the prep. file
-            logger.info("Executing the additional preparation script in '{}'".format(device_name))
-            subprocess.call([prep_file_name, device_name])
+            logger.info("Executing the additional preparation script in '{}'".format(partition_name))
+            subprocess.call([prep_file_name, partition_name])
 
     except Exception as ex:
         logger.exception(ex)
@@ -515,21 +515,36 @@ def docker_cleanup_old_images():
 
 def cleanup_installation(disks):
     """
-    Clean the directory and files created by ECS. It un-mounds the drive and performs a directory cleanup
+    Clean the directory and files created by ECS. It un-mounts the drive and performs a directory cleanup
     """
     try:
-
         logger.info("CleanUp Installation. Un-mount Drive and Delete Directories and Files from the Host")
+        
         for index, disk in enumerate(disks):
-            logger.info("Cleanup performing: Un-mount Drive from the Host :: umount /dev/{}1 ".format(disk))
-            os.system("umount /dev/{}1".format(disk))
-            logger.info("Cleanup performing: rm -rf /ecs/uuid-{}".format(index))
-            os.system("rm -rf /ecs/uuid-{}".format(index + 1))
-        logger.info("Cleanup performing: rm -rf /data/*")
-        os.system("rm -rf /data/*")
-        logger.info("Cleanup performing: rm -rf /var/log/vipr/emcvipr-object/*")
-        os.system("rm -rf /var/log/vipr/emcvipr-object/*")
+            disk_path = "/dev/{}".format(disk)
 
+            partition_name = disk_path + "1"
+            uuid_name = "uuid-{}".format(get_partition_uuid(partition_name))
+
+            # umount /dev/sdc1 /ecs/uuid-1
+            logger.info("Umount attached /dev{} to /ecs/{} volume.".format(partition_name, uuid_name))
+            subprocess.call(["umount", partition_name, "/ecs/{}".format(uuid_name)])
+
+            # rm -rf /ecs/uuid-1
+            logger.info("Remove /ecs/{} Directory in attached Volume".format(uuid_name))
+            subprocess.call(["rm", "-rf", "/ecs/{}".format(uuid_name)])
+            
+            # dd if=/dev/zero of=/dev/sdc bs=512 count=1 conv=notrunc
+            logger.info("Destroying partition table for {}".format(disk_path))
+            subprocess.call(["dd", "if=/dev/zero", "of={}".format(disk_path), "bs=512", "count=1", "conv=notrunc"])
+                        
+        # sudo rm -rf /data/*
+        logger.info("Remove /data/* Directory in attached Volume")
+        subprocess.call(["rm", "-rf", "/data/*"])
+
+        # sudo rm -rf /var/log/vipr/emcvipr-object/*
+        logger.info("Remove /var/log/vipr/emcvipr-object/* Directory ")
+        subprocess.call(["rm", "-rf", "/var/log/vipr/emcvipr-object/*"])
 
     except Exception as ex:
         logger.exception(ex)
