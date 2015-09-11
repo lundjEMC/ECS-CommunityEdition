@@ -6,11 +6,17 @@ import subprocess
 import logging
 import logging.config
 import time
-import sys,re
+import sys
+import re
 import shutil
 import getopt
-import os,json
+import os
+import json
 import settings
+import socket
+import fcntl
+import struct
+
 
 # Logging Initialization
 logging.config.dictConfig(settings.ECS_SINGLENODE_LOGGING)
@@ -148,7 +154,8 @@ def docker_pull_func(docker_image_name):
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-def hosts_file_func(hostname):
+
+def hosts_file_func(hostname, ethadapter):
     """
     Updates the /etc/hosts file with the IP-Hostname of each one of the DataNodes in the cluster
     :rtype : null
@@ -168,8 +175,11 @@ def hosts_file_func(hostname):
 
         logger.info("Updating the /etc/hosts file with the Parameter Hostname")
 
-      # Get the IP address
-        ip_address = subprocess.check_output(['hostname', '-i']).rstrip('\r\n')
+        # Get the IP address on Linux
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ip_address = socket.inet_ntoa(fcntl.ioctl(s.fileno(),
+            0x8915, struct.pack('256s', ethadapter[:15]))[20:24])
+
         # Open a file hosts
         hosts_file = open("/etc/hosts", "a")
         # Check if the hosts file has the entries
@@ -194,8 +204,10 @@ def network_file_func(ethadapter):
 
     try:
 
-        # Get the IP address
-        ip_address = subprocess.check_output(['hostname', '-i']).rstrip('\r\n')
+        # Get the IP address on Linux
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ip_address = socket.inet_ntoa(fcntl.ioctl(s.fileno(),
+                0x8915, struct.pack('256s', ethadapter[:15]))[20:24])
 
         # Get the hostname
         hostname = subprocess.check_output(['hostname']).rstrip('\r\n')
@@ -222,14 +234,17 @@ def network_file_func(ethadapter):
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-def seeds_file_func():
+
+def seeds_file_func(ethadapter):
     """
     Creates and configures the seeds file
     """
 
     try:
-        # Get the IP address
-        ip_address = subprocess.check_output(['hostname', '-i']).rstrip('\r\n')
+        # Get the IP address on Linux
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ip_address = socket.inet_ntoa(fcntl.ioctl(s.fileno(),
+                0x8915, struct.pack('256s', ethadapter[:15]))[20:24])
 
         logger.info("Creating the seeds file with IP address: {} ".format(ip_address))
         # Open a file
@@ -417,19 +432,19 @@ def modify_container_conf_func():
     try:
         logger.info("Backup object properties file")
         os.system(
-            "docker exec -i -t  ecsstandalone cp /opt/storageos/conf/cm.object.properties /opt/storageos/conf/cm.object.properties.old")
+            "docker exec -t  ecsstandalone cp /opt/storageos/conf/cm.object.properties /opt/storageos/conf/cm.object.properties.old")
 
         logger.info("Backup application config file")
         os.system(
-            "docker exec -i -t  ecsstandalone cp /opt/storageos/ecsportal/conf/application.conf /opt/storageos/ecsportal/conf/application.conf.old")
+            "docker exec -t  ecsstandalone cp /opt/storageos/ecsportal/conf/application.conf /opt/storageos/ecsportal/conf/application.conf.old")
 
         logger.info("Copy object properties file to host")
         os.system(
-            "docker exec -i -t ecsstandalone cp /opt/storageos/conf/cm.object.properties /host/cm.object.properties1")
+            "docker exec -t ecsstandalone cp /opt/storageos/conf/cm.object.properties /host/cm.object.properties1")
 
         logger.info("Copy application config file to host")
         os.system(
-            "docker exec -i -t  ecsstandalone cp /opt/storageos/ecsportal/conf/application.conf /host/application.conf")
+            "docker exec -t  ecsstandalone cp /opt/storageos/ecsportal/conf/application.conf /host/application.conf")
 
         logger.info("Modify BlobSvc config for single node")
         os.system(
@@ -440,9 +455,9 @@ def modify_container_conf_func():
 
         logger.info("Copy modified files to container")
         os.system(
-            "docker exec -i -t  ecsstandalone cp /host/cm.object.properties /opt/storageos/conf/cm.object.properties")
+            "docker exec -t  ecsstandalone cp /host/cm.object.properties /opt/storageos/conf/cm.object.properties")
         os.system(
-            "docker exec -i -t  ecsstandalone cp /host/application.conf /opt/storageos/ecsportal/conf/application.conf")
+            "docker exec -t  ecsstandalone cp /host/application.conf /opt/storageos/ecsportal/conf/application.conf")
 
         logger.info("Stop container")
         os.system("docker stop ecsstandalone")
@@ -606,8 +621,10 @@ def main():
 
     docker_image_name = "emccorp/ecs-software"
     ethernet_adapter_name = get_first(args.ethadapter)
-    ip_address = subprocess.check_output(['hostname', '-i'])
-    ip_address = re.findall(r'[0-9]+(?:\.[0-9]+){3}', ip_address)[0]
+    # Get the IP address on Linux
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    ip_address = socket.inet_ntoa(fcntl.ioctl(s.fileno(),
+        0x8915, struct.pack('256s', ethernet_adapter_name[:15]))[20:24])
 
     # update OS to latest packages
     pm_update(pm, pm_auto_install)
@@ -621,9 +638,9 @@ def main():
     prep_file_func()
     time.sleep(10)  # allow docker service to start
     docker_pull_func(docker_image_name)
-    hosts_file_func(args.hostname)
+    hosts_file_func(args.hostname, ethernet_adapter_name)
     network_file_func(ethernet_adapter_name)
-    seeds_file_func()
+    seeds_file_func(ethernet_adapter_name)
     prepare_data_disk_func(args.disks)
     run_additional_prep_file_func(args.disks)
     directory_files_conf_func()
