@@ -10,13 +10,17 @@ import sys,re
 import shutil
 import getopt
 import os,json
-
 import settings
 
 # Logging Initialization
 logging.config.dictConfig(settings.ECS_SINGLENODE_LOGGING)
 logger = logging.getLogger("root")
 
+def get_partition_uuid(disk_partition):
+    """
+    use disk utils to obtain partition uuid
+    """
+    return cmdline("wipefs -npq {} | cut -d "," -f 2 | sed -n 2p".format(disk_partition))
 
 def pm_update(package_manager, options):
     """
@@ -37,7 +41,6 @@ def pm_update(package_manager, options):
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-
 def package_install_func(packages, package_manager, options):
     """
     Installs packages
@@ -52,7 +55,6 @@ def package_install_func(packages, package_manager, options):
             logger.fatal("Aborting program! Please review log.")
             sys.exit()
 
-
 def update_selinux_os_configuration():
     """
     Update the selinux permissions to permissive
@@ -60,7 +62,6 @@ def update_selinux_os_configuration():
 
     logger.info("Updating SELinux to Permissive mode.")
     subprocess.call(["setenforce", "0"])
-
 
 def docker_install_func(package_manager, options):
     """
@@ -74,7 +75,7 @@ def docker_install_func(package_manager, options):
 
         docker_package = "docker-1.4.1-2.el7.x86_64.rpm"
         if package_manager == 'zypper':
-            docker_package = 'docker'
+            docker_package = 'docker-1.4.1'
 
         # Downloads Docker package if not already existent
         elif not docker_package in cmdline("ls"):
@@ -96,19 +97,17 @@ def docker_install_func(package_manager, options):
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-
 def prep_file_func():
     """
     Downloads and configures the preparation file
     """
     try:
 
-        # wget = "wget"
         # url = "https://emccodevmstore001.blob.core.windows.net/test/additional_prep.sh"
 
         # Gets the prep. file
         # logger.info("Downloading the additional_prep file.")
-        # subprocess.call([wget, url])
+        # subprocess.call(["wget", url])
 
         logger.info("Changing the additional_prep.sh file permissions.")
         subprocess.call(["chmod", "777", "additional_prep.sh"])
@@ -117,7 +116,6 @@ def prep_file_func():
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
-
 
 def docker_cleanup_old_images():
     """
@@ -137,24 +135,18 @@ def docker_cleanup_old_images():
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-
 def docker_pull_func(docker_image_name):
     """
     Getting the ECS Docker image from DockerHub. Using Docker Pull
     """
     try:
-
-        docker = "docker"
-        docker_arg = "pull"
-        docker_file = docker_image_name
         logger.info("Executing a Docker Pull for image {}".format(docker_file))
-        subprocess.call([docker, docker_arg, docker_file])
+        subprocess.call(["docker", "pull", docker_image_name])
 
     except Exception as ex:
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
-
 
 def hosts_file_func(hostname):
     """
@@ -230,7 +222,6 @@ def network_file_func(ethadapter):
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-
 def seeds_file_func():
     """
     Creates and configures the seeds file
@@ -254,7 +245,6 @@ def seeds_file_func():
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-
 def prepare_data_disk_func(disks):
     """
     Prepare the data disk for usage. This includes format, and mount
@@ -266,36 +256,37 @@ def prepare_data_disk_func(disks):
 
         for index, disk in enumerate(disks):
             disk_path = "/dev/{}".format(disk)
+            partition_path = "/dev/{}1".format(disk)
 
-            if "{}1".format(disk) in cmdline("fdisk -l"):
+            if "xfs" == cmdline("wipefs -npq /dev/{} | cut -d "," -f 4 | sed -n 2p".format(partition_path)):
+                logger.info("Disk partition {} is already formateed xfs".format(partition_path))
+            elif "{}1".format(disk) in cmdline("fdisk -l"):
                 logger.fatal("Partitioned disk {} already mounted. Please unmount and re-initialize disk before retrying.".format(disk))
                 sys.exit()
+            else:
+                logger.info("Partitioning the disk '{}'".format(disk_path))
+                ps = subprocess.Popen(["echo", "-e", "\"o\nn\np\n1\n\n\nw\""], stdout=subprocess.PIPE)
+                output = subprocess.check_output(["fdisk", disk_path], stdin=ps.stdout)
+                ps.wait()
+                # os.system("echo -e o\nn\np\n1\n\n\nw | fdisk /dev/sdc")
 
-            logger.info("Partitioning the disk '{}'".format(disk_path))
-            ps = subprocess.Popen(["echo", "-e", "\"o\nn\np\n1\n\n\nw\""], stdout=subprocess.PIPE)
-            output = subprocess.check_output(["fdisk", disk_path], stdin=ps.stdout)
-            ps.wait()
-            # os.system("echo -e o\nn\np\n1\n\n\nw | fdisk /dev/sdc")
+                # Make File Filesystem in attached Volume
+                logger.info("Make File filesystem in '{}'".format(device_name))
+                subprocess.call(["mkfs.xfs", "-f", partition_path])
 
-            device_name = disk_path + "1"
-            # Make File Filesystem in attached Volume
-            logger.info("Make File filesystem in '{}'".format(device_name))
-            subprocess.call(["mkfs.xfs", "-f", device_name])
-
-            uuid_name = "uuid-{}".format(index + 1)
+            uuid_name = "uuid-{}".format(get_partition_uuid(partition_path))
             # mkdir -p /ecs/uuid-1
             logger.info("Make /ecs/{} Directory in attached Volume".format(uuid_name))
             subprocess.call(["mkdir", "-p", "/ecs/{}".format(uuid_name)])
 
             # mount /dev/sdc1 /ecs/uuid-1
-            logger.info("Mount attached /dev{} to /ecs/{} volume.".format(device_name, uuid_name))
-            subprocess.call(["mount", device_name, "/ecs/{}".format(uuid_name)])
+            logger.info("Mount attached /dev{} to /ecs/{} volume.".format(partition_path, uuid_name))
+            subprocess.call(["mount", partition_path, "/ecs/{}".format(uuid_name)])
 
     except Exception as ex:
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
-
 
 def run_additional_prep_file_func(disks):
     """
@@ -315,7 +306,6 @@ def run_additional_prep_file_func(disks):
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
-
 
 def directory_files_conf_func():
     '''
@@ -366,7 +356,6 @@ def directory_files_conf_func():
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log")
 
-
 def set_docker_configuration_func():
     '''
     Sets Docker Configuration and Restarts the Service
@@ -390,7 +379,6 @@ def set_docker_configuration_func():
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log")
 
-
 def execute_docker_func(docker_image_name):
     '''
     Execute Docker Container
@@ -412,7 +400,6 @@ def execute_docker_func(docker_image_name):
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log")
 
-
 def cmdline(command):
     """
     Function that executes a Shell command and returns the output
@@ -425,7 +412,6 @@ def cmdline(command):
         shell=True
     )
     return process.communicate()[0]
-
 
 def modify_container_conf_func():
     try:
@@ -468,7 +454,6 @@ def modify_container_conf_func():
         os.system("rm -rf /host/cm.object.properties*")
         os.system("rm -rf /host/application.conf")
 
-
     except Exception as ex:
         logger.exception(ex)
         logger.fatal("Aborting program! Please review log.")
@@ -496,7 +481,6 @@ def getAuthToken(ECSNode, User, Password):
 
     logger.fatal("Authentication service not yet started.")
 
-
 def docker_cleanup_old_images():
     """
     Clean up images and containers from the Host Docker images repository
@@ -515,19 +499,18 @@ def docker_cleanup_old_images():
         logger.fatal("Aborting program! Please review log.")
         sys.exit()
 
-
-
-def cleanup_installation():
+def cleanup_installation(disks):
     """
     Clean the directory and files created by ECS. It un-mounds the drive and performs a directory cleanup
     """
     try:
 
         logger.info("CleanUp Installation. Un-mount Drive and Delete Directories and Files from the Host")
-        logger.info("Cleanup performing: Un-mount Drive from the Host :: umount /dev/sdc1 /ecs/uuid-1")
-        os.system("umount /dev/sdc1 /ecs/uuid-1")
-        logger.info("Cleanup performing: rm -rf /ecs/uuid-1")
-        os.system("rm -rf /ecs/uuid-1")
+        for index, disk in enumerate(disks):
+            logger.info("Cleanup performing: Un-mount Drive from the Host :: umount /dev/{}1 ".format(disk))
+            os.system("umount /dev/{}1".format(disk))
+            logger.info("Cleanup performing: rm -rf /ecs/uuid-{}".format(index))
+            os.system("rm -rf /ecs/uuid-{}".format(index + 1))
         logger.info("Cleanup performing: rm -rf /data/*")
         os.system("rm -rf /data/*")
         logger.info("Cleanup performing: rm -rf /var/log/vipr/emcvipr-object/*")
@@ -597,7 +580,7 @@ def main():
     if args.cleanup:
         logger.info("Starting CleanUp: Removing Previous Docker containers and images. Deletes the created Directories.")
         docker_cleanup_old_images()
-        cleanup_installation()
+        cleanup_installation(args.disks)
         sys.exit(7)
 
     # Check that the Selected Disks have not been initialized and can be used
@@ -628,13 +611,15 @@ def main():
 
     # update OS to latest packages
     pm_update(pm, pm_auto_install)
-    #Install Required packages
-    packages_to_install = ['wget', 'tar']
-    package_install_func(packages_to_install, pm, pm_auto_install)
+    #Required packages (string of package names separated by spaces)
+    packages_to_install = "wget tar"
+    #install required packages
+    package_install_func(packages_to_install.split(' '), pm, pm_auto_install)
 
     update_selinux_os_configuration()
     docker_install_func(pm, pm_auto_install)
     prep_file_func()
+    time.sleep(30)  # allow docker service to start
     docker_pull_func(docker_image_name)
     hosts_file_func(args.hostname)
     network_file_func(ethernet_adapter_name)
