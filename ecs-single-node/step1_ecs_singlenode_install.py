@@ -81,7 +81,7 @@ def docker_install_func(package_manager, options):
 
         docker_package = "docker-1.4.1-2.el7.x86_64.rpm"
         if package_manager == 'zypper':
-            docker_package = 'docker-1.4.1'
+            docker_package = 'docker-1.5.0-20.1'
 
         # Downloads Docker package if not already existent
         elif not docker_package in cmdline("ls"):
@@ -91,8 +91,7 @@ def docker_install_func(package_manager, options):
             subprocess.call(["wget", docker_url])
 
         # Installs the docker package
-        logger.info("Installing the Docker Package.")
-        subprocess.call([package_manager, options, "install", docker_package])
+        package_install_func(docker_package, package_manager, options)
 
         # Starts the Docker Service
         logger.info("Starting the Docker Service.")
